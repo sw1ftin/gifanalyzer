@@ -22,11 +22,11 @@ pip install -r requirements.txt
 python gif_analyzer.py
 ```
 
-### Command Line
+### Command Line Interface
 ```bash
-python gif_parser.py path/to/file.gif
+python cli.py path/to/file.gif
 ```
 
-Flags:
+#### CLI Options:
 - `-o, --output`: Save result to specified file
 - `-h, --help`: Show help message
