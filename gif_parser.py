@@ -1,9 +1,9 @@
 import struct
 from typing import BinaryIO, Dict, List, Tuple
-import os
+from pathlib import Path
 
 class GifParser:
-    def __init__(self, file_path: str = None):
+    def __init__(self, file_path: Path):
         self.file_path = file_path
         self.width = 0
         self.height = 0
@@ -15,12 +15,12 @@ class GifParser:
         self.total_duration = 0
         
     def parse_file(self) -> Dict:
-        if not os.path.exists(self.file_path):
+        if not self.file_path.exists():
             raise FileNotFoundError(f"File {self.file_path} not found")
             
-        self.file_size = os.path.getsize(self.file_path)
+        self.file_size = self.file_path.stat().st_size
         
-        with open(self.file_path, 'rb') as f:
+        with self.file_path.open('rb') as f:
             self._parse_header(f)
             self._parse_logical_screen_descriptor(f)
             self._parse_global_color_table(f)
@@ -218,42 +218,3 @@ class GifParser:
             'dimensions': (self.width, self.height),
             'frame_count': self.frame_count
         }
-
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Analyze GIF files and extract detailed information')
-    parser.add_argument('file', help='Path to GIF file to analyze')
-    parser.add_argument('-o', '--output', help='Save result to specified file')
-    
-    args = parser.parse_args()
-    
-    try:
-        gif_parser = GifParser(args.file)
-        info = gif_parser.parse_file()
-
-        text = []
-        text.append("=== GIF Information ===")
-        for section, items in info['headers'].items():
-            text.append(f"\n{section}:")
-            for key, (value, description) in items.items():
-                text.append(f"{key}: {value} ({description})")
-        
-        text.append("\n=== Frame Information ===")
-        for i, frame in enumerate(info['frames'], 1):
-            text.append(f"\nFrame {i}:")
-            for key, value in frame.items():
-                text.append(f"{key}: {value}")
-        
-        result = "\n".join(text)
-        
-        if args.output:
-            with open(args.output, 'w', encoding='utf-8') as f:
-                f.write(result)
-            print(f"Result saved to {args.output}")
-        else:
-            print(result)
-            
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        exit(1)

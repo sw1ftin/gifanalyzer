@@ -1,8 +1,8 @@
 import customtkinter as ctk
 from tkinter import filedialog
 from PIL import Image, ImageTk
-import os
 from gif_parser import GifParser
+from pathlib import Path
 
 class GifAnalyzer(ctk.CTk):
     def __init__(self):
@@ -285,7 +285,7 @@ class GifAnalyzer(ctk.CTk):
             self.play_pause_btn.configure(text="PLAY")
             
             self.image = Image.open(file_path)
-            self.current_file = file_path
+            self.current_file = str(file_path)
             
             try:
                 while True:
@@ -323,7 +323,7 @@ class GifAnalyzer(ctk.CTk):
             return
             
         try:
-            parser = GifParser(self.current_file)
+            parser = GifParser(Path(self.current_file))
             self.gif_info = parser.parse_file()
             
             self.info_text.configure(state="normal")
@@ -380,7 +380,7 @@ class GifAnalyzer(ctk.CTk):
             return
             
         # Get original file name without extension
-        original_name = os.path.splitext(os.path.basename(self.current_file))[0] if hasattr(self, 'current_file') else "gif"
+        original_name = Path(self.current_file).stem if hasattr(self, 'current_file') else "gif"
         default_name = f"{original_name}_analysis.txt"
         
         file_path = filedialog.asksaveasfilename(
@@ -391,8 +391,7 @@ class GifAnalyzer(ctk.CTk):
         
         if file_path:
             try:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(self.get_formatted_result())
+                Path(file_path).write_text(self.get_formatted_result(), encoding='utf-8')
             except Exception as e:
                 print(f"Error saving file: {str(e)}")
     
