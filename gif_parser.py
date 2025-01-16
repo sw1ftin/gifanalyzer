@@ -1,26 +1,38 @@
 import struct
-from typing import BinaryIO, Dict, List, Tuple
+from typing import BinaryIO
 from pathlib import Path
 
 class GifParser:
+    # GIF Block Types
+    IMAGE_SEPARATOR: bytes = b'\x2C'
+    EXTENSION_INTRODUCER: bytes = b'\x21'
+    TRAILER: bytes = b'\x3B'
+    
+    # GIF Extension Labels
+    GRAPHICS_CONTROL_LABEL: bytes = b'\xF9'
+    APPLICATION_LABEL: bytes = b'\xFF'
+    COMMENT_LABEL: bytes = b'\xFE'
+    
     def __init__(self, file_path: Path):
-        self.file_path = file_path
-        self.width = 0
-        self.height = 0
-        self.global_color_table = []
-        self.frames_info = []
-        self.headers_info = {}
-        self.frame_count = 0
-        self.file_size = 0
-        self.total_duration = 0
+        self._file_path: Path = file_path
+        self._width: int = 0
+        self._height: int = 0
+        self._global_color_table: list[tuple[int, int, int]] = []
+        self._frames_info: list[dict[str, str | tuple[int, int] | bool | int | None]] = []
+        self._headers_info: dict[str, dict[str, tuple[str | int | bool, str]]] = {}
+        self._frame_count: int = 0
+        self._file_size: int = 0
+        self._total_duration: int = 0
+        self._global_color_table_flag: bool = False
+        self._global_color_table_size: int = 0
         
-    def parse_file(self) -> Dict:
-        if not self.file_path.exists():
-            raise FileNotFoundError(f"File {self.file_path} not found")
+    def parse_file(self) -> dict[str, dict | list | tuple | int]:
+        if not self._file_path.exists():
+            raise FileNotFoundError(f"File {self._file_path} not found")
             
-        self.file_size = self.file_path.stat().st_size
+        self._file_size = self._file_path.stat().st_size
         
-        with self.file_path.open('rb') as f:
+        with self._file_path.open('rb') as f:
             self._parse_header(f)
             self._parse_logical_screen_descriptor(f)
             self._parse_global_color_table(f)
@@ -33,13 +45,13 @@ class GifParser:
         signature = header[:3].decode('ascii')
         version = header[3:6].decode('ascii')
         
-        self.headers_info['Header'] = {
+        self._headers_info['Header'] = {
             'Signature': (signature, 'GIF signature'),
             'Version': (version, 'GIF version')
         }
     
     def _parse_logical_screen_descriptor(self, f: BinaryIO) -> None:
-        self.width, self.height = struct.unpack("<HH", f.read(4))
+        self._width, self._height = struct.unpack("<HH", f.read(4))
         packed = struct.unpack("<B", f.read(1))[0]
         background_color = struct.unpack("<B", f.read(1))[0]
         aspect_ratio = struct.unpack("<B", f.read(1))[0]
@@ -49,8 +61,8 @@ class GifParser:
         sort_flag = bool(packed & 0b00001000)
         global_color_table_size = 2 << (packed & 0b00000111)
         
-        self.headers_info['Logical Screen Descriptor'] = {
-            'Canvas Size': (f"{self.width}x{self.height}", 'Image dimensions'),
+        self._headers_info['Logical Screen Descriptor'] = {
+            'Canvas Size': (f"{self._width}x{self._height}", 'Image dimensions'),
             'Global Color Table': (global_color_table_flag, 'Whether global color table exists'),
             'Color Resolution': (color_resolution, 'Bits per primary color'),
             'Sort Flag': (sort_flag, 'Whether colors are sorted'),
@@ -59,17 +71,17 @@ class GifParser:
             'Aspect Ratio': (aspect_ratio, 'Pixel aspect ratio')
         }
         
-        self.global_color_table_flag = global_color_table_flag
-        self.global_color_table_size = global_color_table_size
+        self._global_color_table_flag = global_color_table_flag
+        self._global_color_table_size = global_color_table_size
     
     def _parse_global_color_table(self, f: BinaryIO) -> None:
-        if self.global_color_table_flag:
-            table_size = self.global_color_table_size * 3
+        if self._global_color_table_flag:
+            table_size = self._global_color_table_size * 3
             color_table = f.read(table_size)
             
             for i in range(0, table_size, 3):
                 r, g, b = color_table[i:i+3]
-                self.global_color_table.append((r, g, b))
+                self._global_color_table.append((r, g, b))
     
     def _parse_frames(self, f: BinaryIO) -> None:
         current_frame_data = None
@@ -80,30 +92,30 @@ class GifParser:
                 if not block_type:
                     break
                     
-                if block_type == b'\x2C':
+                if block_type == self.IMAGE_SEPARATOR:
                     current_frame_data = self._parse_image_descriptor(f)
                     if current_frame_data:
-                        self.frames_info.append(current_frame_data)
-                        self.frame_count += 1
+                        self._frames_info.append(current_frame_data)
+                        self._frame_count += 1
                         
-                elif block_type == b'\x21':
+                elif block_type == self.EXTENSION_INTRODUCER:
                     extension_type = f.read(1)
-                    if extension_type == b'\xF9':
+                    if extension_type == self.GRAPHICS_CONTROL_LABEL:
                         if current_frame_data is None:
                             current_frame_data = {}
                         self._parse_graphics_control_extension(f, current_frame_data)
-                    elif extension_type == b'\xFF':
+                    elif extension_type == self.APPLICATION_LABEL:
                         self._parse_application_extension(f)
-                    elif extension_type == b'\xFE':
+                    elif extension_type == self.COMMENT_LABEL:
                         self._parse_comment_extension(f)
                     self._skip_data_blocks(f)
-                elif block_type == b'\x3B':
+                elif block_type == self.TRAILER:
                     break
             except Exception as e:
                 print(f"Error parsing frame: {str(e)}")
                 break
     
-    def _parse_image_descriptor(self, f: BinaryIO) -> Dict:
+    def _parse_image_descriptor(self, f: BinaryIO) -> dict[str, tuple[int, int] | str | bool | int]:
         left, top, width, height = struct.unpack("<HHHH", f.read(8))
         packed = struct.unpack("<B", f.read(1))[0]
         
@@ -128,7 +140,7 @@ class GifParser:
         self._skip_data_blocks(f)
         return frame_info
     
-    def _parse_graphics_control_extension(self, f: BinaryIO, frame_info: Dict) -> None:
+    def _parse_graphics_control_extension(self, f: BinaryIO, frame_info: dict[str, str | int | bool | None]) -> None:
         f.read(1)
         packed = struct.unpack("<B", f.read(1))[0]
         delay_time = struct.unpack("<H", f.read(2))[0]
@@ -146,7 +158,7 @@ class GifParser:
         ]
         
         delay_ms = delay_time * 10
-        self.total_duration += delay_ms
+        self._total_duration += delay_ms
         
         frame_info.update({
             'Delay': f"{delay_ms}ms",
@@ -172,7 +184,7 @@ class GifParser:
             if block_size == 3:
                 f.read(1)
                 iterations = struct.unpack("<H", f.read(2))[0]
-                self.headers_info.setdefault('Metadata', {})['Loop Count'] = (iterations, 'Number of animation iterations (0 = infinite)')
+                self._headers_info.setdefault('Metadata', {})['Loop Count'] = (iterations, 'Number of animation iterations (0 = infinite)')
             else:
                 f.read(block_size)
     
@@ -185,7 +197,7 @@ class GifParser:
             comment.append(f.read(block_size).decode('ascii', errors='ignore'))
         
         if comment:
-            self.headers_info.setdefault('Metadata', {})['Comment'] = (''.join(comment), 'GIF comment data')
+            self._headers_info.setdefault('Metadata', {})['Comment'] = (''.join(comment), 'GIF comment data')
     
     def _skip_data_blocks(self, f: BinaryIO) -> None:
         while True:
@@ -201,20 +213,20 @@ class GifParser:
             size_bytes /= 1024
         return f"{size_bytes:.1f} GB"
     
-    def get_info(self) -> Dict:
+    def get_info(self) -> dict[str, dict | list | tuple | int]:
         summary = {
             'Summary': {
-                'Resolution': (f"{self.width}x{self.height}", 'Image dimensions'),
-                'Frame Count': (self.frame_count, 'Total number of frames'),
-                'File Size': (self._format_size(self.file_size), 'Size on disk'),
-                'Duration': (f"{self.total_duration}ms", 'Total animation duration'),
-                'Frame Rate': (f"{1000 * self.frame_count / self.total_duration:.1f} FPS" if self.total_duration > 0 else "N/A", 'Average frame rate')
+                'Resolution': (f"{self._width}x{self._height}", 'Image dimensions'),
+                'Frame Count': (self._frame_count, 'Total number of frames'),
+                'File Size': (self._format_size(self._file_size), 'Size on disk'),
+                'Duration': (f"{self._total_duration}ms", 'Total animation duration'),
+                'Frame Rate': (f"{1000 * self._frame_count / self._total_duration:.1f} FPS" if self._total_duration > 0 else "N/A", 'Average frame rate')
             }
         }
         
         return {
-            'headers': {**summary, **self.headers_info},
-            'frames': self.frames_info,
-            'dimensions': (self.width, self.height),
-            'frame_count': self.frame_count
+            'headers': {**summary, **self._headers_info},
+            'frames': self._frames_info,
+            'dimensions': (self._width, self._height),
+            'frame_count': self._frame_count
         }
